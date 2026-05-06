@@ -15,3 +15,16 @@ google-auth==2.36.0
 google-auth-oauthlib==1.2.1
 google-auth-httplib2==0.2.0
 google-api-python-client==2.154.0
+
+# ── Phase 1: LangGraph ──────────────────────────────────────────────────────
+langgraph==0.2.70
+langchain-core==0.3.28
+
+# PostgreSQL checkpointing + pgvector for story memory
+langgraph-checkpoint-postgres==2.0.10
+psycopg[binary,pool]==3.2.3
+pgvector==0.3.6
+
+# Embeddings (story deduplication via semantic similarity)
+sentence-transformers==3.3.1
+numpy==1.26.4

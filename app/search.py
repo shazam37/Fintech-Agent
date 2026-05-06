@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # Split into focused queries rather than one broad query.
 # This improves recall across different story types.
 SEARCH_QUERIES = [
-    "fintech banking innovation regulation 2025",
+    "fintech banking innovation regulation 2026",
     "asset management fund investment technology news",
     "digital banking neobank payment startup news",
     "banking regulation compliance financial crime news",
