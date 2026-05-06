@@ -11,7 +11,7 @@ want to record stories as "seen" if the user never received them.
 """
 
 import logging
-from app.graph.state import DigestState
+from app.state import DigestState
 from app.gmail import send_digest_email
 from app.memory import save_stories_to_memory
 

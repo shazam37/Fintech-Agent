@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     # === Phase 1: PostgreSQL (checkpointing + memory) ===
     # Format: postgresql://user:password@host:5432/dbname
     # On Render: use your Internal Database URL
-    DATABASE_URL: str = "postgresql://localhost:5432/fintech_agent"
+    DATABASE_URL: str 
 
     # === Phase 1: Alert agent ===
     # Urgency score (1-10) at or above which a breaking alert email is sent immediately

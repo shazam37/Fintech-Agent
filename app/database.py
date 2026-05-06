@@ -188,3 +188,19 @@ async def record_alert_sent(url: str, title: str, urgency: int):
             (url, title, urgency),
         )
         await conn.commit()
+
+async def fetch_run_by_id(run_id: str) -> dict | None:
+    """Fetch a single run by run_id (for preview + debugging)."""
+    async with get_conn() as conn:
+        result = await conn.execute(
+            "SELECT * FROM run_history WHERE run_id = %s",
+            (run_id,),
+        )
+
+        row = await result.fetchone()
+
+        if not row:
+            return None
+
+        cols = [d.name for d in result.description]
+        return dict(zip(cols, row))

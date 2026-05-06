@@ -9,7 +9,7 @@ nodes can skip gracefully rather than crash.
 """
 
 import logging
-from app.graph.state import DigestState
+from app.state import DigestState
 from app.search import fetch_fintech_news, SEARCH_QUERIES
 from app.config import settings
 from tavily import TavilyClient

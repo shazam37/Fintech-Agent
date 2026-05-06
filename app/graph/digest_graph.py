@@ -43,7 +43,7 @@ from datetime import datetime, timezone
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-from app.graph.state import DigestState
+from app.state import DigestState
 from app.graph.news_agent import news_agent
 from app.graph.memory_agent import memory_agent
 from app.graph.curator_agent import curator_agent

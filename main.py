@@ -26,8 +26,13 @@ from apscheduler.triggers.interval import IntervalTrigger
 import pytz
 
 from app.config import settings
-from app.graph.state import agent_state
-from app.database import init_pool, close_pool, create_schema, fetch_run_history
+from app.database import (
+    init_pool,
+    close_pool,
+    create_schema,
+    fetch_run_history,
+    fetch_run_by_id,   # <-- assumed you have this
+)
 from app.graph.digest_graph import build_graph, run_fintech_digest
 from app.alert_graph import build_alert_graph, run_alert_check
 
@@ -40,20 +45,18 @@ logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler(timezone=pytz.utc)
 
 
+# ── Lifespan ────────────────────────────────────────────────────────────────
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ── 1. Database ────────────────────────────────────────────────────────
     await init_pool()
     await create_schema()
 
-    # ── 2. LangGraph graphs ────────────────────────────────────────────────
     await build_graph()
     await build_alert_graph()
 
-    # ── 3. Scheduler ────────────────────────────────────────────────────────
     tz = pytz.timezone(settings.USER_TIMEZONE)
 
-    # Daily digest at 9:00 AM user's timezone
     scheduler.add_job(
         run_fintech_digest,
         CronTrigger(hour=9, minute=0, timezone=tz),
@@ -62,7 +65,6 @@ async def lifespan(app: FastAPI):
         misfire_grace_time=3600,
     )
 
-    # Breaking alert check every ALERT_POLL_HOURS hours
     scheduler.add_job(
         run_alert_check,
         IntervalTrigger(hours=settings.ALERT_POLL_HOURS),
@@ -79,7 +81,6 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # ── Shutdown ─────────────────────────────────────────────────────────
     scheduler.shutdown()
     await close_pool()
 
@@ -91,23 +92,44 @@ app = FastAPI(
 )
 
 
-# ── Dashboard ────────────────────────────────────────────────────────────────
+# ── Helper: Dashboard State ─────────────────────────────────────────────────
+
+async def get_dashboard_state():
+    history = await fetch_run_history(limit=5)
+
+    if not history:
+        return {
+            "last_run": "Never",
+            "last_status": "—",
+            "stories_found": 0,
+            "history": [],
+        }
+
+    latest = history[0]
+
+    return {
+        "last_run": latest.get("timestamp", "—"),
+        "last_status": latest.get("status", "—"),
+        "stories_found": latest.get("stories", 0),
+        "history": history,
+    }
+
+
+# ── Dashboard ───────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
-    last_run = agent_state.get("last_run", "Never")
-    last_status = agent_state.get("last_status", "—")
-    stories_found = agent_state.get("stories_found", 0)
-    history = agent_state.get("run_history", [])[-5:][::-1]
+    state = await get_dashboard_state()
 
     rows = ""
-    for r in history:
-        icon = "✅" if "success" in r.get("status","") else "❌"
-        dur = f"{r['duration_s']}s" if r.get("duration_s") else "—"
+    for r in state["history"]:
+        icon = "✅" if "success" in r.get("status", "") else "❌"
+        dur = f"{r.get('duration_s')}s" if r.get("duration_s") else "—"
+
         rows += (
-            f"<tr><td>{r['timestamp']}</td>"
-            f"<td>{icon} {r['status'][:40]}</td>"
-            f"<td>{r['stories']}</td>"
+            f"<tr><td>{r.get('timestamp','—')}</td>"
+            f"<td>{icon} {r.get('status','—')[:40]}</td>"
+            f"<td>{r.get('stories','—')}</td>"
             f"<td>{dur}</td></tr>"
         )
 
@@ -129,9 +151,9 @@ async def root():
 <span class="badge">LangGraph + PostgreSQL Checkpointing</span>
 
 <p style="margin-top:1rem">
-  Status: <strong class="{'ok' if 'success' in last_status else 'err'}">{last_status}</strong><br>
-  Last run: {last_run}<br>
-  Stories in last digest: {stories_found}<br>
+  Status: <strong class="{'ok' if 'success' in state['last_status'] else 'err'}">{state['last_status']}</strong><br>
+  Last run: {state['last_run']}<br>
+  Stories in last digest: {state['stories_found']}<br>
   Schedule: 9:00 AM {settings.USER_TIMEZONE} · Alert check every {settings.ALERT_POLL_HOURS}h
 </p>
 
@@ -152,12 +174,13 @@ async def root():
 </body></html>"""
 
 
-# ── Health ───────────────────────────────────────────────────────────────────
+# ── Health ──────────────────────────────────────────────────────────────────
 
 @app.get("/health")
 async def health():
     from app.graph.digest_graph import _graph
     from app.database import get_pool
+
     return {
         "status": "ok",
         "scheduler_running": scheduler.running,
@@ -166,48 +189,79 @@ async def health():
     }
 
 
-# ── Manual triggers ──────────────────────────────────────────────────────────
+# ── Manual triggers ─────────────────────────────────────────────────────────
 
 @app.get("/run-now")
 async def trigger_now(background_tasks: BackgroundTasks):
-    """Manually trigger the daily digest pipeline."""
     background_tasks.add_task(run_fintech_digest)
-    return {"message": "Digest triggered in background. Check /preview in ~60 seconds."}
+    return {"message": "Digest triggered in background."}
 
 
 @app.get("/alert-now")
 async def trigger_alert(background_tasks: BackgroundTasks):
-    """Manually trigger a breaking news alert check."""
     background_tasks.add_task(run_alert_check)
     return {"message": "Alert check triggered in background."}
 
 
-# ── Preview ──────────────────────────────────────────────────────────────────
+# ── Preview (DB-backed) ─────────────────────────────────────────────────────
 
 @app.get("/preview", response_class=HTMLResponse)
 async def preview_last_email():
-    """Preview the last generated email HTML in the browser."""
-    html = agent_state.get("last_email_html")
-    if not html:
+    history = await fetch_run_history(limit=1)
+
+    if not history:
         raise HTTPException(
             status_code=404,
             detail="No digest generated yet. Hit /run-now first.",
         )
+
+    run_id = history[0]["run_id"]
+    run = await fetch_run_by_id(run_id)
+
+    html = run.get("email_html")
+
+    if not html:
+        raise HTTPException(
+            status_code=404,
+            detail="No email HTML found for last run.",
+        )
+
     return html
 
 
-# ── Run history ──────────────────────────────────────────────────────────────
+# ── Run history ─────────────────────────────────────────────────────────────
 
 @app.get("/runs")
 async def list_runs(limit: int = 30):
-    """Return paginated run history from PostgreSQL."""
     try:
         rows = await fetch_run_history(limit=limit)
-        # Serialise datetimes for JSON
+
         for r in rows:
             for k, v in r.items():
                 if isinstance(v, datetime):
                     r[k] = v.isoformat()
+
         return JSONResponse(content={"runs": rows, "count": len(rows)})
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Single run detail (time-travel debugging) ────────────────────────────────
+
+@app.get("/runs/{run_id}")
+async def get_run(run_id: str):
+    try:
+        run = await fetch_run_by_id(run_id)
+
+        if not run:
+            raise HTTPException(status_code=404, detail="Run not found")
+
+        for k, v in run.items():
+            if isinstance(v, datetime):
+                run[k] = v.isoformat()
+
+        return run
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

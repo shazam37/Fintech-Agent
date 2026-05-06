@@ -12,7 +12,7 @@ and audit node. It reads should_abort to determine what status to log.
 import logging
 from datetime import datetime, timezone
 
-from app.graph.state import DigestState
+from app.state import DigestState
 from app.gmail import create_calendar_confirmation
 from app.database import upsert_run
 

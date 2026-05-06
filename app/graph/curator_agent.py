@@ -9,7 +9,7 @@ falls back to raw snippets so the digest still delivers value.
 """
 
 import logging
-from app.graph.state import DigestState
+from app.state import DigestState
 from app.llm import process_stories
 from app.config import settings
 

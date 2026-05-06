@@ -6,9 +6,8 @@ No I/O, no API calls — just template rendering. Should never fail.
 """
 
 import logging
-from app.graph.state import DigestState
+from app.state import DigestState
 from app.email_builder import build_email_html
-from app.state import agent_state   # Keep in-memory state for /preview endpoint
 
 logger = logging.getLogger(__name__)
 
