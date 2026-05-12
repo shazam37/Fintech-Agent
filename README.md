@@ -1,4 +1,4 @@
-# FinTech Intelligence Agent
+# FinDigest.ai
 
 > **A self-improving AI agent that monitors fintech news and delivers personalised daily briefings so you always know what matters, without having to look.**
 
